@@ -21,6 +21,7 @@ const debug = false
 
 // Location describes a source code location.
 type Location struct {
+	Pc   uintptr
 	File string
 	Line int
 }
@@ -126,6 +127,33 @@ type Locationer interface {
 	Location() Location
 }
 
+// StackFrameInfo returns the pc
+// of the stack of underlying errors wrapped by err.
+//
+// The details are found by type-asserting the error to
+// the Locationer, Causer and Wrapper interfaces.
+// Details of the underlying stack are found by
+// recursively calling Underlying when the
+// underlying error implements Wrapper.
+func StackFrameInfo(err error) []uintptr {
+	var s []uintptr
+
+	for err != nil {
+		if err, ok := err.(Locationer); ok {
+			loc := err.Location()
+			if loc.IsSet() {
+				s = append(s, loc.Pc)
+			}
+		}
+		if cerr, ok := err.(Wrapper); ok {
+			err = cerr.Underlying()
+		} else {
+			err = nil
+		}
+	}
+	return s
+}
+
 // Details returns information about the stack of
 // underlying errors wrapped by err, in the format:
 //
@@ -179,8 +207,8 @@ func Details(err error) string {
 // Locate records the source location of the error by setting
 // e.Location, at callDepth stack frames above the call.
 func (e *Err) SetLocation(callDepth int) {
-	_, file, line, _ := runtime.Caller(callDepth + 1)
-	e.Location_ = Location{file, line}
+	pc, file, line, _ := runtime.Caller(callDepth + 1)
+	e.Location_ = Location{pc, file, line}
 }
 
 func setLocation(err error, callDepth int) {
